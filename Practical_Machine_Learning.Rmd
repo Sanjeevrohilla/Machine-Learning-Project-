@@ -1,0 +1,145 @@
+---
+title: "Machine Learning Final Project"
+author: "Sanjeev Rohilla"
+date: "December 15, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Coursera Practical Machine Learning Project 
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+
+```{r, results='hide'}
+# Libraries used for preparing and exploring the data
+library(caret)
+library(rattle)
+library(ggplot2)
+```
+
+
+```{r}
+# Gettiig the training Dataset
+TrainData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),header=TRUE)
+dim(TrainData)
+
+# Getting the test dataset
+TestData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),header = TRUE)
+dim(TestData)
+
+```
+
+After Getting the training and test dataset. Preprocess the data for modelling and visualisation
+
+``` {r}
+# To check NA values are present in the training and test dataset
+str(TrainData)
+```
+
+From here I got that our data contains NA values in every line almost so we need to perform the cleaning operation while taking care of the NA values.Similary there would be NA values in the TestData as well.
+
+``` {r}
+indColToRemove <- which(colSums(is.na(TrainData) |TrainData=="")>0.9*dim(TrainData)[1]) 
+TrainDataClean <- TrainData[,-indColToRemove]
+TrainDataClean <- TrainDataClean[,-c(1:7)]
+dim(TrainDataClean)
+
+# So assuming the NA values would be present in the test dataset well. So will perform the similar operation on test dataset as well
+
+indColToRemove <- which(colSums(is.na(TestData) |TestData=="")>0.9*dim(TestData)[1]) 
+TestDataClean <- TestData[,-indColToRemove]
+TestDataClean <- TestDataClean[,-1]
+dim(TestDataClean)
+```
+
+Let's check randomly for the testdata are NA values present or not
+
+```{r}
+str(TestDataClean$roll_arm)
+# As we can see all teh NA values of Test Data are cared off. let's go to our next step 
+```
+
+After cleaning the data.Lets crate a partition of the dataset
+```{r}
+set.seed(12345)
+inTrain1 <- createDataPartition(TrainDataClean$classe, p=0.75, list=FALSE)
+Train1 <- TrainDataClean[inTrain1,]
+Test1 <- TrainDataClean[-inTrain1,]
+dim(Train1)
+dim(Test1)
+```
+
+We will check three difffernt models : "Classification Tree","RandomForest","GBM"
+In order to limit the effects of overfitting, and improve the efficicency of the models, we will use the *cross-validation technique. We will use 5 folds (usually, 5 or 10 can be used, but 10 folds gives higher run times with no significant increase of the accuracy)
+
+```{r}
+trControl <- trainControl(method="cv", number=5)
+model_CT <- train(classe~., data=Train1, method="rpart", trControl=trControl)
+
+#print(model_CT)
+fancyRpartPlot(model_CT$finalModel)
+
+trainpred <- predict(model_CT,newdata=Test1)
+
+confMatCT <- confusionMatrix(Test1$classe,trainpred)
+
+# display confusion matrix and model accuracy
+confMatCT$table
+
+confMatCT$overall[1]
+
+```
+
+Here we have noticed that the outcome is not predicted well by other predictors.Let's move to the Random Forest
+
+```{r}
+model_RF <- train(classe~., data=Train1, method="rf", trControl=trControl, verbose=FALSE)
+print(model_RF)
+plot(model_RF,main="Accuracy of Random forest model by number of predictors")
+trainpred <- predict(model_RF,newdata=Test1)
+
+confMatRF <- confusionMatrix(Test1$classe,trainpred)
+
+# display confusion matrix and model accuracy
+confMatRF$table
+confMatRF$overall[1]
+names(model_RF$finalModel)
+model_RF$finalModel$classes
+plot(model_RF$finalModel,main="Model error of Random forest model by number of trees")
+
+# Compute the variable importance 
+MostImpVars <- varImp(model_RF)
+MostImpVars
+
+```
+
+As we can see we have acheived the accuracy of more than 99% with 5 folds of cross validation.This seems to be perfect but let's see what BGM offers us.
+
+## Gradient Boosting Method
+```{r}
+model_GBM <- train(classe~., data=Train1, method="gbm", trControl=trControl, verbose=FALSE)
+print(model_GBM)
+plot(model_GBM)
+
+trainpred <- predict(model_GBM,newdata=Test1)
+
+confMatGBM <- confusionMatrix(Test1$classe,trainpred)
+confMatGBM$table
+
+confMatGBM$overall[1]
+```
+
+As we can see the accuracy obtained by "gbm" is 95% which is also great but the accuracy offered by Random Forest is higher so we will consider the Random Forest for this project.
+
+Conclusion
+This shows that the random forest model is the best one. We will then use it to predict the values of classe for the test data set.
+``` {r}
+FinalTestPred <- predict(model_RF,newdata=TestDataClean)
+FinalTestPred
+```
